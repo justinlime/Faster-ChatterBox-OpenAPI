@@ -18,16 +18,23 @@ from chatterbox.tts import ChatterboxTTS
 import soundfile as sf
 import numpy as np
 
-# Parse command line arguments
+# Parse command line arguments with ENV var fallbacks
 parser = argparse.ArgumentParser(description="Chatterbox TTS API Server")
-parser.add_argument("--port", type=int, default=8000, help="Port to run the server on")
-parser.add_argument("--host", type=str, default="0.0.0.0", help="Host to bind to")
-parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu",
-                    help="Device to run model on (cuda/cpu)")
-parser.add_argument("--audio-prompt", type=str, default=None,
-                    help="Path to audio file to use as voice prompt")
-parser.add_argument("--chunk-size", type=int, default=4096,
-                    help="Chunk size for streaming audio (bytes)")
+parser.add_argument("--port", type=int, 
+                    default=int(os.getenv("PORT", "8000")),
+                    help="Port to run the server on (ENV: PORT)")
+parser.add_argument("--host", type=str, 
+                    default=os.getenv("HOST", "0.0.0.0"),
+                    help="Host to bind to (ENV: HOST)")
+parser.add_argument("--device", type=str, 
+                    default=os.getenv("DEVICE", "cuda" if torch.cuda.is_available() else "cpu"),
+                    help="Device to run model on (ENV: DEVICE)")
+parser.add_argument("--audio-prompt", type=str, 
+                    default=os.getenv("AUDIO_PROMPT"),
+                    help="Path to audio file to use as voice prompt (ENV: AUDIO_PROMPT)")
+parser.add_argument("--chunk-size", type=int, 
+                    default=int(os.getenv("CHUNK_SIZE", "4096")),
+                    help="Chunk size for streaming audio in bytes (ENV: CHUNK_SIZE)")
 args = parser.parse_args()
 
 # Initialize FastAPI app
@@ -94,37 +101,14 @@ async def generate_audio_stream(wav_tensor: torch.Tensor, sample_rate: int, chun
         # Small delay to simulate streaming behavior
         await asyncio.sleep(0.01)
 
-async def generate_pcm_stream(wav_tensor: torch.Tensor, sample_rate: int, chunk_size: int = 4096) -> AsyncGenerator[bytes, None]:
-    """
-    Stream raw PCM audio data in chunks (no WAV header)
-    Useful for real-time streaming applications
-    """
-    # Ensure tensor is on CPU and convert to int16 PCM format
-    audio_np = wav_tensor.cpu().numpy()
-
-    # Handle channel dimension
-    if audio_np.ndim == 2 and audio_np.shape[0] < audio_np.shape[1]:
-        # Transpose from (channels, samples) to (samples, channels)
-        audio_np = audio_np.T
-
-    # Normalize to int16 range if needed
-    if audio_np.dtype == np.float32 or audio_np.dtype == np.float64:
-        audio_np = (audio_np * 32767).astype(np.int16)
-
-    audio_bytes = audio_np.tobytes()
-
-    # Stream in chunks
-    for i in range(0, len(audio_bytes), chunk_size):
-        chunk = audio_bytes[i:i + chunk_size]
-        yield chunk
-        await asyncio.sleep(0.001)  # Minimal delay for real-time feel
-
 @app.on_event("startup")
 async def load_model():
     """Load the Chatterbox TTS model on startup"""
     global model
     print(f"Loading Chatterbox TTS model on {args.device}...")
     model = ChatterboxTTS.from_pretrained(device=args.device)
+    model.t3.to(dtype=torch.bfloat16)
+    model.conds.t3.to(dtype=torch.bfloat16)
     print("Model loaded successfully!")
     if audio_prompt_path:
         print(f"Using default audio prompt: {audio_prompt_path}")
@@ -211,126 +195,6 @@ async def create_speech(request: TTSRequestAudio):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"TTS generation failed: {str(e)}")
 
-@app.post("/v1/audio/speech/stream")
-async def create_speech_stream(request: TTSRequestAudio):
-    """
-    Dedicated streaming endpoint (always streams)
-    POST /v1/audio/speech/stream
-    """
-    if model is None:
-        raise HTTPException(status_code=503, detail="Model not loaded")
-
-    if not request.input or len(request.input.strip()) == 0:
-        raise HTTPException(status_code=400, detail="Input text cannot be empty")
-
-    try:
-        prompt_path = request.audio_prompt_path or audio_prompt_path
-
-        if prompt_path:
-            wav = model.generate(request.input, audio_prompt_path=prompt_path)
-        else:
-            wav = model.generate(request.input)
-
-        # Always stream
-        return StreamingResponse(
-            generate_audio_stream(wav, model.sr, chunk_size=args.chunk_size),
-            media_type="audio/wav",
-            headers={
-                "Content-Disposition": "attachment; filename=speech.wav",
-                "Transfer-Encoding": "chunked",
-                "X-Streaming": "true"
-            }
-        )
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"TTS generation failed: {str(e)}")
-
-@app.post("/v1/audio/speech/pcm")
-async def create_speech_pcm_stream(request: TTSRequestAudio):
-    """
-    Raw PCM streaming endpoint (no WAV header, for real-time applications)
-    POST /v1/audio/speech/pcm
-
-    Returns raw PCM audio data (int16, mono/stereo depending on model output)
-    Sample rate can be retrieved from GET / endpoint or is typically 24000 Hz
-    """
-    if model is None:
-        raise HTTPException(status_code=503, detail="Model not loaded")
-
-    if not request.input or len(request.input.strip()) == 0:
-        raise HTTPException(status_code=400, detail="Input text cannot be empty")
-
-    try:
-        prompt_path = request.audio_prompt_path or audio_prompt_path
-
-        if prompt_path:
-            wav = model.generate(request.input, audio_prompt_path=prompt_path)
-        else:
-            wav = model.generate(request.input)
-
-        # Stream raw PCM
-        return StreamingResponse(
-            generate_pcm_stream(wav, model.sr, chunk_size=args.chunk_size),
-            media_type="audio/pcm",
-            headers={
-                "Content-Disposition": "attachment; filename=speech.pcm",
-                "Transfer-Encoding": "chunked",
-                "X-Sample-Rate": str(model.sr),
-                "X-Bit-Depth": "16",
-                "X-Channels": str(wav.shape[0] if wav.dim() > 1 else 1),
-                "X-Streaming": "true"
-            }
-        )
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"TTS generation failed: {str(e)}")
-
-@app.post("/v1/audio/speech/custom")
-async def create_speech_custom_voice(request: TTSRequestAudio):
-    """
-    Extended endpoint that allows per-request audio prompt override
-    POST /v1/audio/speech/custom
-
-    Supports streaming via "stream": true
-    """
-    if model is None:
-        raise HTTPException(status_code=503, detail="Model not loaded")
-
-    if not request.input or len(request.input.strip()) == 0:
-        raise HTTPException(status_code=400, detail="Input text cannot be empty")
-
-    if not request.audio_prompt_path:
-        raise HTTPException(status_code=400, detail="audio_prompt_path is required for this endpoint")
-
-    if not Path(request.audio_prompt_path).exists():
-        raise HTTPException(status_code=404, detail=f"Audio prompt file not found: {request.audio_prompt_path}")
-
-    try:
-        wav = model.generate(request.input, audio_prompt_path=request.audio_prompt_path)
-
-        if request.stream:
-            return StreamingResponse(
-                generate_audio_stream(wav, model.sr, chunk_size=args.chunk_size),
-                media_type="audio/wav",
-                headers={
-                    "Content-Disposition": "attachment; filename=speech.wav",
-                    "Transfer-Encoding": "chunked"
-                }
-            )
-        else:
-            wav_bytes = tensor_to_wav_bytes(wav, model.sr)
-            buffer = io.BytesIO(wav_bytes)
-
-            return StreamingResponse(
-                buffer,
-                media_type="audio/wav",
-                headers={
-                    "Content-Disposition": "attachment; filename=speech.wav"
-                }
-            )
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"TTS generation failed: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

@@ -435,6 +435,58 @@ wheels = [
 ]
 
 [[package]]
+name = "fasterchatterboxopenapi"
+version = "0.4.4"
+source = { virtual = "." }
+dependencies = [
+    { name = "conformer" },
+    { name = "diffusers" },
+    { name = "fastapi" },
+    { name = "librosa" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "omegaconf" },
+    { name = "pykakasi" },
+    { name = "resampy" },
+    { name = "resemble-perth" },
+    { name = "s3tokenizer" },
+    { name = "safetensors" },
+    { name = "setuptools" },
+    { name = "soundfile" },
+    { name = "spacy-pkuseg" },
+    { name = "torch" },
+    { name = "torchaudio" },
+    { name = "torchcodec" },
+    { name = "transformers" },
+    { name = "tts-webui-chatterbox-tts" },
+    { name = "uvicorn" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "conformer" },
+    { name = "diffusers" },
+    { name = "fastapi", specifier = ">=0.122.0" },
+    { name = "librosa" },
+    { name = "numpy" },
+    { name = "omegaconf" },
+    { name = "pykakasi", specifier = "==2.3.0" },
+    { name = "resampy", specifier = "==0.4.3" },
+    { name = "resemble-perth", specifier = "==1.0.1" },
+    { name = "s3tokenizer" },
+    { name = "safetensors" },
+    { name = "setuptools", specifier = ">=80.9.0" },
+    { name = "soundfile", specifier = ">=0.13.1" },
+    { name = "spacy-pkuseg" },
+    { name = "torch" },
+    { name = "torchaudio" },
+    { name = "torchcodec", specifier = ">=0.8.1" },
+    { name = "transformers" },
+    { name = "tts-webui-chatterbox-tts", git = "https://github.com/rsxdalv/chatterbox.git?rev=faster" },
+    { name = "uvicorn", specifier = ">=0.38.0" },
+]
+
+[[package]]
 name = "filelock"
 version = "3.20.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2418,11 +2470,10 @@ wheels = [
 [[package]]
 name = "tts-webui-chatterbox-tts"
 version = "0.4.4"
-source = { editable = "." }
+source = { git = "https://github.com/rsxdalv/chatterbox.git?rev=faster#e33df55c58512b8f201e95bac298747194379331" }
 dependencies = [
     { name = "conformer" },
     { name = "diffusers" },
-    { name = "fastapi" },
     { name = "librosa" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
@@ -2432,37 +2483,10 @@ dependencies = [
     { name = "resemble-perth" },
     { name = "s3tokenizer" },
     { name = "safetensors" },
-    { name = "setuptools" },
-    { name = "soundfile" },
     { name = "spacy-pkuseg" },
     { name = "torch" },
     { name = "torchaudio" },
-    { name = "torchcodec" },
     { name = "transformers" },
-    { name = "uvicorn" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "conformer" },
-    { name = "diffusers" },
-    { name = "fastapi", specifier = ">=0.122.0" },
-    { name = "librosa" },
-    { name = "numpy" },
-    { name = "omegaconf" },
-    { name = "pykakasi", specifier = "==2.3.0" },
-    { name = "resampy", specifier = "==0.4.3" },
-    { name = "resemble-perth", specifier = "==1.0.1" },
-    { name = "s3tokenizer" },
-    { name = "safetensors" },
-    { name = "setuptools", specifier = ">=80.9.0" },
-    { name = "soundfile", specifier = ">=0.13.1" },
-    { name = "spacy-pkuseg" },
-    { name = "torch" },
-    { name = "torchaudio" },
-    { name = "torchcodec", specifier = ">=0.8.1" },
-    { name = "transformers" },
-    { name = "uvicorn", specifier = ">=0.38.0" },
 ]
 
 [[package]]
