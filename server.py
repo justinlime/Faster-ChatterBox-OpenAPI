@@ -5,6 +5,7 @@ OpenAI-compatible TTS API for Chatterbox with streaming support
 import argparse
 import io
 import os
+import gc
 import asyncio
 from pathlib import Path
 from typing import Optional, AsyncGenerator
@@ -98,8 +99,6 @@ async def generate_audio_stream(wav_tensor: torch.Tensor, sample_rate: int, chun
     for i in range(0, len(wav_bytes), chunk_size):
         chunk = wav_bytes[i:i + chunk_size]
         yield chunk
-        # Small delay to simulate streaming behavior
-        await asyncio.sleep(0.01)
 
 @app.on_event("startup")
 async def load_model():
@@ -107,8 +106,8 @@ async def load_model():
     global model
     print(f"Loading Chatterbox TTS model on {args.device}...")
     model = ChatterboxTTS.from_pretrained(device=args.device)
-    model.t3.to(dtype=torch.bfloat16)
-    model.conds.t3.to(dtype=torch.bfloat16)
+    model.t3.to(dtype=torch.float16)
+    model.conds.t3.to(dtype=torch.float16)
     print("Model loaded successfully!")
     if audio_prompt_path:
         print(f"Using default audio prompt: {audio_prompt_path}")
@@ -162,16 +161,17 @@ async def create_speech(request: TTSRequestAudio):
         # Determine which audio prompt to use
         prompt_path = request.audio_prompt_path or audio_prompt_path
 
-        # Generate audio
-        if prompt_path:
-            wav = model.generate(request.input, audio_prompt_path=prompt_path)
-        else:
-            wav = model.generate(request.input)
+        # Generate audio with no_grad to reduce memory usage
+        with torch.no_grad():
+            if prompt_path:
+                wav = model.generate(request.input, audio_prompt_path=prompt_path)
+            else:
+                wav = model.generate(request.input)
 
         # Handle streaming vs non-streaming
         if request.stream:
             # Stream the audio in chunks
-            return StreamingResponse(
+            response = StreamingResponse(
                 generate_audio_stream(wav, model.sr, chunk_size=args.chunk_size),
                 media_type="audio/wav",
                 headers={
@@ -184,13 +184,16 @@ async def create_speech(request: TTSRequestAudio):
             wav_bytes = tensor_to_wav_bytes(wav, model.sr)
             buffer = io.BytesIO(wav_bytes)
 
-            return StreamingResponse(
+            response = StreamingResponse(
                 buffer,
                 media_type="audio/wav",
                 headers={
                     "Content-Disposition": "attachment; filename=speech.wav"
                 }
             )
+
+        
+        return response
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"TTS generation failed: {str(e)}")
